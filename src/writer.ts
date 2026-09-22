@@ -3,8 +3,8 @@ import { ArrayBufferTarget, FileSystemWritableFileStreamTarget, StreamTarget } f
 
 export abstract class Writer {
 	pos = 0;
-	#helper = new Uint8Array(8);
-	#helperView = new DataView(this.#helper.buffer);
+	_helper = new Uint8Array(8);
+	_helperView = new DataView(this._helper.buffer);
 
 	/**
 	 * Stores the position from the start of the file to where boxes elements have been written. This is used to
@@ -23,24 +23,24 @@ export abstract class Writer {
 	}
 
 	writeU32(value: number) {
-		this.#helperView.setUint32(0, value, false);
-		this.write(this.#helper.subarray(0, 4));
+		this._helperView.setUint32(0, value, false);
+		this.write(this._helper.subarray(0, 4));
 	}
 
 	writeU64(value: number) {
-		this.#helperView.setUint32(0, Math.floor(value / 2**32), false);
-		this.#helperView.setUint32(4, value, false);
-		this.write(this.#helper.subarray(0, 8));
+		this._helperView.setUint32(0, Math.floor(value / 2**32), false);
+		this._helperView.setUint32(4, value, false);
+		this.write(this._helper.subarray(0, 8));
 	}
 
 	writeAscii(text: string) {
 		for (let i = 0; i < text.length; i++) {
-			this.#helperView.setUint8(i % 8, text.charCodeAt(i));
-			if (i % 8 === 7) this.write(this.#helper);
+			this._helperView.setUint8(i % 8, text.charCodeAt(i));
+			if (i % 8 === 7) this.write(this._helper);
 		}
 
 		if (text.length % 8 !== 0) {
-			this.write(this.#helper.subarray(0, text.length % 8));
+			this.write(this._helper.subarray(0, text.length % 8));
 		}
 	}
 
@@ -101,43 +101,43 @@ export abstract class Writer {
  * written to the ArrayBufferTarget once the muxing finishes.
  */
 export class ArrayBufferTargetWriter extends Writer {
-	#target: ArrayBufferTarget;
-	#buffer = new ArrayBuffer(2**16);
-	#bytes = new Uint8Array(this.#buffer);
-	#maxPos = 0;
+	_target: ArrayBufferTarget;
+	_buffer = new ArrayBuffer(2**16);
+	_bytes = new Uint8Array(this._buffer);
+	_maxPos = 0;
 
 	constructor(target: ArrayBufferTarget) {
 		super();
 
-		this.#target = target;
+		this._target = target;
 	}
 
-	#ensureSize(size: number) {
-		let newLength = this.#buffer.byteLength;
+	_ensureSize(size: number) {
+		let newLength = this._buffer.byteLength;
 		while (newLength < size) newLength *= 2;
 
-		if (newLength === this.#buffer.byteLength) return;
+		if (newLength === this._buffer.byteLength) return;
 
 		let newBuffer = new ArrayBuffer(newLength);
 		let newBytes = new Uint8Array(newBuffer);
-		newBytes.set(this.#bytes, 0);
+		newBytes.set(this._bytes, 0);
 
-		this.#buffer = newBuffer;
-		this.#bytes = newBytes;
+		this._buffer = newBuffer;
+		this._bytes = newBytes;
 	}
 
 	write(data: Uint8Array) {
-		this.#ensureSize(this.pos + data.byteLength);
+		this._ensureSize(this.pos + data.byteLength);
 
-		this.#bytes.set(data, this.pos);
+		this._bytes.set(data, this.pos);
 		this.pos += data.byteLength;
 
-		this.#maxPos = Math.max(this.#maxPos, this.pos);
+		this._maxPos = Math.max(this._maxPos, this.pos);
 	}
 
 	finalize() {
-		this.#ensureSize(this.pos);
-		this.#target.buffer = this.#buffer.slice(0, Math.max(this.#maxPos, this.pos));
+		this._ensureSize(this.pos);
+		this._target.buffer = this._buffer.slice(0, Math.max(this._maxPos, this.pos));
 	}
 }
 
@@ -146,8 +146,8 @@ export class ArrayBufferTargetWriter extends Writer {
  * last flush. This is useful for streaming applications, like piping the output to disk.
  */
 export class StreamTargetWriter extends Writer {
-	#target: StreamTarget;
-	#sections: {
+	_target: StreamTarget;
+	_sections: {
 		data: Uint8Array,
 		start: number
 	}[] = [];
@@ -155,11 +155,11 @@ export class StreamTargetWriter extends Writer {
 	constructor(target: StreamTarget) {
 		super();
 
-		this.#target = target;
+		this._target = target;
 	}
 
 	write(data: Uint8Array) {
-		this.#sections.push({
+		this._sections.push({
 			data: data.slice(),
 			start: this.pos
 		});
@@ -167,14 +167,14 @@ export class StreamTargetWriter extends Writer {
 	}
 
 	flush() {
-		if (this.#sections.length === 0) return;
+		if (this._sections.length === 0) return;
 
 		let chunks: {
 			start: number,
 			size: number,
 			data?: Uint8Array
 		}[] = [];
-		let sorted = [...this.#sections].sort((a, b) => a.start - b.start);
+		let sorted = [...this._sections].sort((a, b) => a.start - b.start);
 
 		chunks.push({
 			start: sorted[0].start,
@@ -200,17 +200,17 @@ export class StreamTargetWriter extends Writer {
 			chunk.data = new Uint8Array(chunk.size);
 
 			// Make sure to write the data in the correct order for correct overwriting
-			for (let section of this.#sections) {
+			for (let section of this._sections) {
 				// Check if the section is in the chunk
 				if (chunk.start <= section.start && section.start < chunk.start + chunk.size) {
 					chunk.data.set(section.data, section.start - chunk.start);
 				}
 			}
 
-			this.#target.options.onData?.(chunk.data, chunk.start);
+			this._target.options.onData?.(chunk.data, chunk.start);
 		}
 
-		this.#sections.length = 0;
+		this._sections.length = 0;
 	}
 
 	finalize() {}
@@ -236,41 +236,41 @@ interface ChunkSection {
  * size, which is when it is piped to the StreamTarget. This is helpful for reducing the total amount of writes.
  */
 export class ChunkedStreamTargetWriter extends Writer {
-	#target: StreamTarget;
-	#chunkSize: number;
+	_target: StreamTarget;
+	_chunkSize: number;
 	/**
 	 * The data is divided up into fixed-size chunks, whose contents are first filled in RAM and then flushed out.
 	 * A chunk is flushed if all of its contents have been written.
 	 */
-	#chunks: Chunk[] = [];
+	_chunks: Chunk[] = [];
 
 	constructor(target: StreamTarget) {
 		super();
 
-		this.#target = target;
-		this.#chunkSize = target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
+		this._target = target;
+		this._chunkSize = target.options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
 
-		if (!Number.isInteger(this.#chunkSize) || this.#chunkSize < 2**10) {
+		if (!Number.isInteger(this._chunkSize) || this._chunkSize < 2**10) {
 			throw new Error('Invalid StreamTarget options: chunkSize must be an integer not smaller than 1024.');
 		}
 	}
 
 	write(data: Uint8Array) {
-		this.#writeDataIntoChunks(data, this.pos);
-		this.#flushChunks();
+		this._writeDataIntoChunks(data, this.pos);
+		this._flushChunks();
 
 		this.pos += data.byteLength;
 	}
 
-	#writeDataIntoChunks(data: Uint8Array, position: number) {
+	_writeDataIntoChunks(data: Uint8Array, position: number) {
 		// First, find the chunk to write the data into, or create one if none exists
-		let chunkIndex = this.#chunks.findIndex(x => x.start <= position && position < x.start + this.#chunkSize);
-		if (chunkIndex === -1) chunkIndex = this.#createChunk(position);
-		let chunk = this.#chunks[chunkIndex];
+		let chunkIndex = this._chunks.findIndex(x => x.start <= position && position < x.start + this._chunkSize);
+		if (chunkIndex === -1) chunkIndex = this._createChunk(position);
+		let chunk = this._chunks[chunkIndex];
 
 		// Figure out how much to write to the chunk, and then write to the chunk
 		let relativePosition = position - chunk.start;
-		let toWrite = data.subarray(0, Math.min(this.#chunkSize - relativePosition, data.byteLength));
+		let toWrite = data.subarray(0, Math.min(this._chunkSize - relativePosition, data.byteLength));
 		chunk.data.set(toWrite, relativePosition);
 
 		// Create a section describing the region of data that was just written to
@@ -278,29 +278,29 @@ export class ChunkedStreamTargetWriter extends Writer {
 			start: relativePosition,
 			end: relativePosition + toWrite.byteLength
 		};
-		this.#insertSectionIntoChunk(chunk, section);
+		this._insertSectionIntoChunk(chunk, section);
 
 		// Queue chunk for flushing to target if it has been fully written to
-		if (chunk.written[0].start === 0 && chunk.written[0].end === this.#chunkSize) {
+		if (chunk.written[0].start === 0 && chunk.written[0].end === this._chunkSize) {
 			chunk.shouldFlush = true;
 		}
 
 		// Make sure we don't hold too many chunks in memory at once to keep memory usage down
-		if (this.#chunks.length > MAX_CHUNKS_AT_ONCE) {
+		if (this._chunks.length > MAX_CHUNKS_AT_ONCE) {
 			// Flush all but the last chunk
-			for (let i = 0; i < this.#chunks.length-1; i++) {
-				this.#chunks[i].shouldFlush = true;
+			for (let i = 0; i < this._chunks.length-1; i++) {
+				this._chunks[i].shouldFlush = true;
 			}
-			this.#flushChunks();
+			this._flushChunks();
 		}
 
 		// If the data didn't fit in one chunk, recurse with the remaining datas
 		if (toWrite.byteLength < data.byteLength) {
-			this.#writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
+			this._writeDataIntoChunks(data.subarray(toWrite.byteLength), position + toWrite.byteLength);
 		}
 	}
 
-	#insertSectionIntoChunk(chunk: Chunk, section: ChunkSection) {
+	_insertSectionIntoChunk(chunk: Chunk, section: ChunkSection) {
 		let low = 0;
 		let high = chunk.written.length - 1;
 		let index = -1;
@@ -328,37 +328,37 @@ export class ChunkedStreamTargetWriter extends Writer {
 		}
 	}
 
-	#createChunk(includesPosition: number) {
-		let start = Math.floor(includesPosition / this.#chunkSize) * this.#chunkSize;
+	_createChunk(includesPosition: number) {
+		let start = Math.floor(includesPosition / this._chunkSize) * this._chunkSize;
 		let chunk: Chunk = {
 			start,
-			data: new Uint8Array(this.#chunkSize),
+			data: new Uint8Array(this._chunkSize),
 			written: [],
 			shouldFlush: false
 		};
-		this.#chunks.push(chunk);
-		this.#chunks.sort((a, b) => a.start - b.start);
+		this._chunks.push(chunk);
+		this._chunks.sort((a, b) => a.start - b.start);
 
-		return this.#chunks.indexOf(chunk);
+		return this._chunks.indexOf(chunk);
 	}
 
-	#flushChunks(force = false) {
-		for (let i = 0; i < this.#chunks.length; i++) {
-			let chunk = this.#chunks[i];
+	_flushChunks(force = false) {
+		for (let i = 0; i < this._chunks.length; i++) {
+			let chunk = this._chunks[i];
 			if (!chunk.shouldFlush && !force) continue;
 
 			for (let section of chunk.written) {
-				this.#target.options.onData?.(
+				this._target.options.onData?.(
 					chunk.data.subarray(section.start, section.end),
 					chunk.start + section.start
 				);
 			}
-			this.#chunks.splice(i--, 1);
+			this._chunks.splice(i--, 1);
 		}
 	}
 
 	finalize() {
-		this.#flushChunks(true);
+		this._flushChunks(true);
 	}
 }
 

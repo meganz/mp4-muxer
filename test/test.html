@@ -1,6 +1,5 @@
-<script src="../build/mp4-muxer.js"></script>
-
 <script type="module">
+    import {Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget} from "./mp4-muxer.bundle.js";
 	const width = 1280;
 	const height = 720;
 	const sampleRate = 44100;
@@ -24,17 +23,15 @@
 	let buf = new Uint8Array(2**24);
 	let maxPos = 0;
 
-	let muxer = new Mp4Muxer.Muxer({
-		//target: new Mp4Muxer.FileSystemWritableFileStreamTarget(fileWritableStream),
-		target: new Mp4Muxer.ArrayBufferTarget(),
-		
+	let muxer = new Muxer({
+		target: new FileSystemWritableFileStreamTarget(fileWritableStream),
 		video: {
 			codec: 'avc',
 			width,
 			height
 		},
 		audio: {
-			codec: 'aac',
+			codec: 'opus',
 			numberOfChannels,
 			sampleRate
 		},
@@ -70,7 +67,7 @@
 		error: (e) => console.error(e)
 	});
 	audioEncoder.configure({
-		codec: 'mp4a.40.2',
+		codec: 'opus',
 		sampleRate,
 		numberOfChannels,
 		bitrate: 128000,
@@ -106,16 +103,5 @@
 	await audioEncoder.flush();
 
 	muxer.finalize();
-	let buffer = muxer.target.buffer;
-	console.log(buffer);
-
 	await fileWritableStream.close();
-
-	function download(blob, filename) {
-		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = filename;
-		a.click();
-	}
-	download(new Blob([buffer]), 't.mp4');
 </script>
