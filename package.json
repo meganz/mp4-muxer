@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "watch": "node build.mjs --watch",
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
